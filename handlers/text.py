@@ -1,6 +1,8 @@
 from telethon.events import NewMessage, StopPropagation
 from logger import get_logger
 from datetime import date
+from localization import g_map, g_text_new_prompt, g_text_daily_limit_0, g_text_daily_limit_1
+from handlers.start import SharedHandlerState
 import openai
 
 
@@ -14,18 +16,16 @@ async def complete(corr_id, model, prompt, temperature, max_tokens):
     return response
 
 
-async def ask_for_new_prompt(event: NewMessage.Event):
-    await event.message.respond(
-        "I'm sorry, I didn't quite understand what you're looking for. "
-        "Could you please provide a proper astrological prompt, "
-        "including your zodiac sign and the information you'd like to know about?\n"
-        "Use /help to see example prompts.")
+async def ask_for_new_prompt(shared_state, event: NewMessage.Event):
+    await event.message.respond(g_map[await shared_state.get_language_from_event(event=event)][g_text_new_prompt])
 
 
 class TextHandler:
-    def __init__(self, openai_api_key, daily_limit):
-        self.counters = dict()
+    def __init__(self, shared_state: SharedHandlerState, openai_api_key, daily_limit):
+        self.shared_state = shared_state
         self.daily_limit = daily_limit
+
+        self.counters = dict()
         self.last_write_date = date.today()
 
         openai.api_key = openai_api_key
@@ -49,9 +49,9 @@ class TextHandler:
 
         if count >= self.daily_limit:
             await event.message.respond(
-                f"I do have a daily limit on the number of predictions ({self.daily_limit}) I can provide for each "
-                f"user. This is to ensure that I can keep providing high-quality astrological insights to everyone "
-                f"while also taking care of my AI self.")
+                g_map[await self.shared_state.get_language_from_event(event=event)][g_text_daily_limit_0] + str(
+                    self.daily_limit) + g_map[await self.shared_state.get_language_from_event(event=event)][
+                    g_text_daily_limit_1])
             get_logger().info(msg=f"corr_id={corr_id}: count={count}. Count of predictions is over the limit")
             raise StopPropagation
 
@@ -76,12 +76,12 @@ class TextHandler:
             score = int(estimate_response.choices[0].text)
         except Exception as e:
             get_logger().error(msg=f"corr_id={corr_id}: Model's score is not castable to int: {e}")
-            await ask_for_new_prompt(event=event)
+            await ask_for_new_prompt(shared_state=self.shared_state, event=event)
             raise StopPropagation
 
         if score < 5:
             get_logger().info(msg=f"corr_id={corr_id}: Model's score {score} < 5")
-            await ask_for_new_prompt(event=event)
+            await ask_for_new_prompt(shared_state=self.shared_state, event=event)
             raise StopPropagation
 
         # do prediction
@@ -102,12 +102,12 @@ class TextHandler:
             prediction = str(response.choices[0].text)
         except Exception as e:
             get_logger().error(msg=f"Model's prediction is not a string: {e}")
-            await ask_for_new_prompt(event=event)
+            await ask_for_new_prompt(shared_state=self.shared_state, event=event)
             raise StopPropagation
 
         if len(prediction) < 10:
             get_logger().error(msg=f"Model's prediction is too short: {len(prediction)}")
-            await ask_for_new_prompt(event=event)
+            await ask_for_new_prompt(shared_state=self.shared_state, event=event)
             raise StopPropagation
 
         # Send prediction to user

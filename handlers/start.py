@@ -1,25 +1,37 @@
 from telethon.events import NewMessage, StopPropagation
 from logger import get_logger
+from localization import g_map, g_hello, get_language_from_ietf_code
+
+
+class SharedHandlerState:
+    def __init__(self):
+        self.users = dict()
+
+    async def get_language_from_event(self, event: NewMessage.Event) -> tuple:
+        chat_id = event.chat_id
+
+        if chat_id not in self.users:
+            self.users[chat_id] = dict()
+
+        if "language" not in self.users[chat_id]:
+            sender = await event.message.get_sender()
+            # language code might be none but its accounted for in function
+            language = get_language_from_ietf_code(sender.lang_code)
+            get_logger().info(f"Language chosen for chat_id={chat_id}: {language.name}")
+            self.users[chat_id]["language"] = language
+
+        return self.users[chat_id]["language"]
 
 
 class StartHandler:
-    def __init__(self):
-        pass
+    def __init__(self, shared_state: SharedHandlerState):
+        self.shared_state = shared_state
 
     async def __call__(self, event: NewMessage.Event):
         corr_id = f"{event.chat_id}_{event.message.id}"
         get_logger().info(msg=f"corr_id={corr_id}: start or help request: {event.message.message}")
 
         # send instructions
-        await event.message.respond(
-            "Hello and welcome! I'm an astrological prediction bot powered by AI. "
-            "To receive personalized predictions, simply describe yourself or someone else, "
-            "including your/their zodiac sign and what you'd like to know about.\n\n"
-            "Here are a couple of example prompts to get you started:\n"
-            "⭐️ I'm a Scorpio born on November 1st. I want to know what's in store for me in love this month.\n"
-            "⭐️ I want to know what opportunities I'll have in my career as a Taurus in the next 6 months.\n"
-            "⭐️ Can you tell me what the next year holds for my financial future as a Gemini?\n\n"
-            "Feel free to get creative with your prompts and let's delve into the mysteries of the stars together!\n\n"
-            "p.s. You can use any language you're comfortable with, although English is easier for me : )")
+        await event.message.respond(g_map[await self.shared_state.get_language_from_event(event=event)][g_hello])
 
         raise StopPropagation

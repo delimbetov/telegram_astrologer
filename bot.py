@@ -1,5 +1,5 @@
 from telethon import TelegramClient, events
-from handlers.start import StartHandler
+from handlers.start import StartHandler, SharedHandlerState
 from handlers.text import TextHandler
 from logger import get_logger
 
@@ -50,14 +50,17 @@ class Bot:
             api_id=config.api_id,
             api_hash=config.api_hash).start(bot_token=config.token)
 
+        self.shared_state = SharedHandlerState()
+
         # Add /start handler
         self.client.add_event_handler(
-            callback=StartHandler(),
+            callback=StartHandler(shared_state=self.shared_state),
             event=events.NewMessage(pattern=f'^/(start|help)', incoming=True, outgoing=False))
 
         # Add text handler
         self.client.add_event_handler(
-            callback=TextHandler(openai_api_key=self.config.openai_api_key, daily_limit=self.config.daily_limit),
+            callback=TextHandler(shared_state=self.shared_state, openai_api_key=self.config.openai_api_key,
+                                 daily_limit=self.config.daily_limit),
             event=events.NewMessage(incoming=True, outgoing=False))
 
     async def arun(self):
